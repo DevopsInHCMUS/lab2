@@ -50,7 +50,7 @@ pipeline {
         dir("${env.TARGET_SERVICE}") {
           retry(3) {
             sh """
-              ../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Ddocker.image.prefix=${DOCKER_HUB_USER}
+              ../mvnw clean install -P buildDocker -Dcontainer.platform="linux/arm64" -Dspring.profiles.active=native -Ddocker.image.prefix=${DOCKER_HUB_USER}
               docker images | grep spring-petclinic
             """
           }
