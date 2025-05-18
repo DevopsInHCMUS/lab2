@@ -51,11 +51,16 @@ pipeline {
                         def serviceName = service.replaceFirst('spring-petclinic-', '')
                         sh """
                             docker-compose build ${serviceName}
-                            docker tag \$(docker images springcommunity/${service} --format "{{.ID}}" | head -n 1) trgtamthanh/${serviceName}:${commitId}
-                            docker push trgtamthanh/${serviceName}:${commitId}
+
                         """
 
+                        sh """
+                            docker tag springcommunity/${service} trgtamthanh/${serviceName}:${commitId}
+                        """
 
+                        sh """
+                            docker push trgtamthanh/${serviceName}:${commitId}
+                        """
                     }
                 }
             }
