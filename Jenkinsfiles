@@ -13,7 +13,7 @@ pipeline {
                     def affectedServices = []
 
                     SERVICES.split(',').each { service ->
-                        if (changedFiles.find { it.startsWith(service + "/") }) {
+                        if (changedFiles.any { it.startsWith(service + "/") }) {
                             affectedServices.add(service)
                         }
                     }
@@ -21,15 +21,21 @@ pipeline {
                     if (affectedServices.isEmpty()) {
                         echo "No services changed. Skipping build."
                         currentBuild.result = 'SUCCESS'
+                        // Set env to avoid executing later stage
+                        env.BUILD_SERVICES = ''
                         return
                     }
 
                     env.BUILD_SERVICES = affectedServices.join(',')
+                    echo "Changed services: ${env.BUILD_SERVICES}"
                 }
             }
         }
 
         stage('Login to Docker Hub') {
+            when {
+                expression { return env.BUILD_SERVICES?.trim() }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
@@ -37,29 +43,26 @@ pipeline {
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Build & Push Docker Images') {
             when {
-                expression { return env.BUILD_SERVICES }
+                expression { return env.BUILD_SERVICES?.trim() }
             }
             steps {
                 script {
                     def commitId = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     env.COMMIT_ID = commitId
 
+                    sh './mvnw clean install -PbuildDocker'
+
                     env.BUILD_SERVICES.split(',').each { service ->
-                        echo "Building Docker image for ${service} with tag ${commitId}..."
                         def serviceName = service.replaceFirst('spring-petclinic-', '')
-                        sh """
-                            // docker-compose build ${serviceName}
-                            docker pull springcommunity/${service}
+                        echo "Tagging and pushing ${service}..."
 
-                        """
-
-                        sh """
-                            docker tag springcommunity/${service} trgtamthanh/${serviceName}:${commitId}
-                        """
+                        // Assuming Docker image is built as springframeworkpetclinic/<service-name>
+                        def imageName = "springcommunity/${service}"
 
                         sh """
+                            docker tag ${imageName} trgtamthanh/${serviceName}:${commitId}
                             docker push trgtamthanh/${serviceName}:${commitId}
                         """
                     }
