@@ -50,7 +50,8 @@ pipeline {
                         echo "Building Docker image for ${service} with tag ${commitId}..."
                         def serviceName = service.replaceFirst('spring-petclinic-', '')
                         sh """
-                            docker-compose build ${serviceName}
+                            // docker-compose build ${serviceName}
+                            docker pull springcommunity/${service}
 
                         """
 
