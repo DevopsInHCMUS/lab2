@@ -90,12 +90,10 @@ pipeline {
           steps {
             script {
               def envFile = ''
-              if (env.GIT_BRANCH == 'main') {
-                envFile = 'values-dev.yaml'
-              } else if (env.GIT_TAG_NAME?.startsWith('v')) {
+              if (env.GIT_TAG_NAME?.startsWith('v')) {
                 envFile = 'values-staging.yaml'
               } else {
-                error("Không xác định môi trường (dev/staging)")
+                envFile = 'values-dev.yaml'
               }
 
               def helmValuesFile = "${HELM_REPO_DIR}/${envFile}"
