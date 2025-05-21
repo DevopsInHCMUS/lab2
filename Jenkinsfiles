@@ -76,6 +76,9 @@ pipeline {
     }
 
     stage('Checkout Helm Repo') {
+        when {
+          branch 'main'
+        }
           steps {
             dir('helm-lab2') {
               git url: 'https://github.com/DevopsInHCMUS/helm-lab2.git', credentialsId: 'github-token', branch: 'main'
@@ -87,13 +90,18 @@ pipeline {
         }
 
         stage('Update Helm values') {
+          when {
+            branch 'main'
+          }
           steps {
             script {
               def envFile = ''
-              if (env.GIT_TAG_NAME?.startsWith('v')) {
+              if (env.GIT_BRANCH == 'main') {
+                envFile = 'values-dev.yaml'
+              } else if (env.GIT_TAG_NAME?.startsWith('v')) {
                 envFile = 'values-staging.yaml'
               } else {
-                envFile = 'values-dev.yaml'
+                error("Không xác định môi trường (dev/staging)")
               }
 
               def helmValuesFile = "${HELM_REPO_DIR}/${envFile}"
@@ -107,6 +115,9 @@ pipeline {
         }
 
         stage('Commit & Push to Git') {
+          when {
+            branch 'main'
+          }
           steps {
             dir("${HELM_REPO_DIR}") {
               withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
