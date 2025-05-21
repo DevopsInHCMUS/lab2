@@ -79,7 +79,7 @@ pipeline {
         when {
           anyOf {
             branch 'main'
-            expression { return env.GIT_TAG_NAME?.startsWith('v') }
+            expression { return env.BRANCH_NAME?.startsWith('v') }
           }
         }
           steps {
@@ -96,7 +96,7 @@ pipeline {
           when {
             anyOf {
               branch 'main'
-              expression { return env.GIT_TAG_NAME?.startsWith('v') }
+              expression { return env.BRANCH_NAME?.startsWith('v') }
             }
           }
           steps {
@@ -104,7 +104,7 @@ pipeline {
               def envFile = ''
               if (env.GIT_BRANCH == 'main') {
                 envFile = 'values-dev.yaml'
-              } else if (env.GIT_TAG_NAME?.startsWith('v')) {
+              } else if (env.BRANCH_NAME?.startsWith('v')) {
                 envFile = 'values-staging.yaml'
               } else {
                 error("Không xác định môi trường (dev/staging)")
@@ -124,7 +124,7 @@ pipeline {
           when {
             anyOf {
               branch 'main'
-              expression { return env.GIT_TAG_NAME?.startsWith('v') }
+              expression { return env.BRANCH_NAME?.startsWith('v') }
             }
           }
           steps {
