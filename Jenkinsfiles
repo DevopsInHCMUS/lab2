@@ -77,7 +77,10 @@ pipeline {
 
     stage('Checkout Helm Repo') {
         when {
-          branch 'main'
+          anyOf {
+            branch 'main'
+            expression { return env.GIT_TAG_NAME?.startsWith('v') }
+          }
         }
           steps {
             dir('helm-lab2') {
@@ -91,7 +94,10 @@ pipeline {
 
         stage('Update Helm values') {
           when {
-            branch 'main'
+            anyOf {
+              branch 'main'
+              expression { return env.GIT_TAG_NAME?.startsWith('v') }
+            }
           }
           steps {
             script {
@@ -116,7 +122,10 @@ pipeline {
 
         stage('Commit & Push to Git') {
           when {
-            branch 'main'
+            anyOf {
+              branch 'main'
+              expression { return env.GIT_TAG_NAME?.startsWith('v') }
+            }
           }
           steps {
             dir("${HELM_REPO_DIR}") {
