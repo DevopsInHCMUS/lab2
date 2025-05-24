@@ -113,8 +113,11 @@ pipeline {
               def helmValuesFile = "${HELM_REPO_DIR}/${envFile}"
               echo "Cập nhật tag cho service ${env.TARGET_SERVICE} trong file ${helmValuesFile}"
 
+              def helmServiceKey = env.TARGET_SERVICE.replace("spring-petclinic-", "")
+              echo "Cập nhật tag cho service ${helmServiceKey} trong file ${helmValuesFile}"
+
               sh """
-                yq e '.services["${env.TARGET_SERVICE}"].tag = "${IMAGE_TAG}"' -i ${helmValuesFile}
+                yq e '.services["${helmServiceKey}"].tag = "${IMAGE_TAG}"' -i ${helmValuesFile}
               """
             }
           }
