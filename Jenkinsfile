@@ -6,13 +6,14 @@ pipeline {
     }
 
     stages {
-        stage('Detect Changed Services') {
+        stage("Detect Changed Services") {
             steps {
                 script {
-                    def changedFiles = sh(script: "git diff --name-only HEAD~1", returnStdout: true).trim().split("\n")
+                    sh 'git fetch origin main:refs/remotes/origin/main'
+                    def changedFiles = sh(script: "git diff --name-only origin/main...", returnStdout: true).trim().split("\n")
                     def affectedServices = []
 
-                    SERVICES.split(',').each { service ->
+                    env.SERVICES.split(',').each { service ->
                         if (changedFiles.find { it.startsWith(service + "/") }) {
                             affectedServices.add(service)
                         }
@@ -20,7 +21,7 @@ pipeline {
 
                     if (affectedServices.isEmpty()) {
                         echo "No services changed. Skipping build."
-                        currentBuild.result = 'SUCCESS'
+                        currentBuild.result = "SUCCESS"
                         return
                     }
 
@@ -29,37 +30,43 @@ pipeline {
             }
         }
 
-        stage('Login to Docker Hub') {
+        stage("Login to Docker Hub") {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                withCredentials([usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    script {
+                        env.REPOSITORY_PREFIX = DOCKER_USER
+                        sh '''
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        '''
+                    }
                 }
             }
         }
 
-        stage('Docker Build & Push') {
+        stage("Docker Build") {
             when {
-                expression { return env.BUILD_SERVICES }
+                expression { return env.BUILD_SERVICES?.trim() }
             }
             steps {
                 script {
                     def commitId = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    env.COMMIT_ID = commitId
-
+                    env.VERSION = commitId
+                    
                     env.BUILD_SERVICES.split(',').each { service ->
-                        echo "Building Docker image for ${service} with tag ${commitId}..."
-                        def serviceName = service.replaceFirst('spring-petclinic-', '')
-                        sh """
-                            docker-compose build ${serviceName}
-                        """
+                        dir(service) {
+                            sh "../mvnw install -D skipTests -P buildDocker"
+                        }
+                    }
+                }
+            }
+        }
 
-                        sh """
-                            docker tag springcommunity/${service} phuong273/${serviceName}:${commitId} 
-                        """
-                        
-                        sh """
-                            docker push phuong273/${serviceName}:${commitId}
-                        """
+        stage("Tag & Push Images") {
+            steps {
+                script {
+                    env.BUILD_SERVICES.split(',').each { service ->
+                        sh "docker tag springcommunity/${service} ${env.REPOSITORY_PREFIX}/${service}:${env.VERSION}"
+                        sh "docker push ${env.REPOSITORY_PREFIX}/${service}:${env.VERSION}"
                     }
                 }
             }
