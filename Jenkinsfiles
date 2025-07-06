@@ -1,0 +1,148 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKER_HUB_USER = 'trgtamthanh'
+    IMAGE_TAG = ''
+  }
+
+  stages {
+    stage('Prepare') {
+      steps {
+        script {
+          if (env.GIT_COMMIT) {
+            IMAGE_TAG = env.GIT_COMMIT.take(7)
+          }
+
+          if (env.TAG_NAME) {
+            IMAGE_TAG = env.TAG_NAME
+          }
+
+          echo "Image tag: ${IMAGE_TAG}"
+        }
+      }
+    }
+
+    stage('Detect Changed Service') {
+      steps {
+        script {
+          def changedFiles = sh(script: "git diff --name-only HEAD~1", returnStdout: true).trim()
+          def matchedService = ''
+
+          changedFiles.split('\n').each { file ->
+            if (file.contains("spring-petclinic-") && file.contains("-service/")) {
+              matchedService = file.split('/')[0]
+            }
+          }
+
+          if (!matchedService) {
+            error("Không phát hiện service nào bị thay đổi.")
+          }
+
+          env.TARGET_SERVICE = matchedService
+          echo "Service bị thay đổi: ${env.TARGET_SERVICE}"
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        dir("${env.TARGET_SERVICE}") {
+          retry(3) {
+            sh """
+              ../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Ddocker.image.prefix=${DOCKER_HUB_USER}
+              docker images | grep spring-petclinic
+            """
+          }
+        }
+
+      }
+    }
+
+    stage('Push Docker Image') {
+        steps {
+            withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            script {
+                def imageLatest = "${DOCKER_USER}/${env.TARGET_SERVICE}:latest"
+                def imageWithTag = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
+                sh """
+                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                docker tag ${imageLatest} ${imageWithTag}
+                docker push ${imageWithTag}
+                """
+            }
+            }
+        }
+    }
+
+    stage('Checkout Helm Repo') {
+        when {
+          anyOf {
+            branch 'main'
+            expression { return env.TAG_NAME?.startsWith('v') }
+          }
+        }
+          steps {
+            dir('helm-lab2') {
+              git url: 'https://github.com/DevopsInHCMUS/helm-lab2.git', credentialsId: 'github-token', branch: 'main'
+            }
+            script {
+              env.HELM_REPO_DIR = 'helm-lab2'
+            }
+          }
+        }
+
+        stage('Update Helm values') {
+          when {
+            anyOf {
+              branch 'main'
+              expression { return env.TAG_NAME?.startsWith('v') }
+            }
+          }
+          steps {
+            script {
+              def envFile = ''
+              if (env.GIT_BRANCH == 'main') {
+                envFile = 'values-dev.yaml'
+              } else if (env.TAG_NAME?.startsWith('v')) {
+                envFile = 'values-staging.yaml'
+              } else {
+                error("Không xác định môi trường (dev/staging)")
+              }
+
+              def helmValuesFile = "${HELM_REPO_DIR}/${envFile}"
+              echo "Cập nhật tag cho service ${env.TARGET_SERVICE} trong file ${helmValuesFile}"
+
+              def helmServiceKey = env.TARGET_SERVICE.replace("spring-petclinic-", "")
+              echo "Cập nhật tag cho service ${helmServiceKey} trong file ${helmValuesFile}"
+
+              sh """
+                yq e '.services["${helmServiceKey}"].tag = "${IMAGE_TAG}"' -i ${helmValuesFile}
+              """
+            }
+          }
+        }
+
+        stage('Commit & Push to Git') {
+          when {
+            anyOf {
+              branch 'main'
+              expression { return env.TAG_NAME?.startsWith('v') }
+            }
+          }
+          steps {
+            dir("${HELM_REPO_DIR}") {
+              withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                sh """
+                  git config user.email "ci@example.com"
+                  git config user.name "jenkins"
+                  git add .
+                  git commit -m "Update image for ${env.TARGET_SERVICE} to ${IMAGE_TAG}" || echo "Nothing to commit"
+                  git push https://${GIT_USER}:${GIT_PASS}@github.com/DevopsInHCMUS/helm-lab2.git HEAD:main
+                """
+              }
+            }
+          }
+        }
+  }
+}
